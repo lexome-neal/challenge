@@ -1,0 +1,22 @@
+{
+  "name": "take-home",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "startWebhookServer": "tsc && node dist/webhookServer.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@types/node": "^22.9.1",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.1.0",
+    "ioredis": "^5.4.1",
+    "openai": "^4.73.0",
+    "typescript": "^5.7.2",
+    "uuid": "^11.0.3",
+    "zod": "^3.23.8"
+  }
+}
