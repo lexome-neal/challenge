@@ -1,5 +1,6 @@
 
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 
 import { publishEvent } from './utils/orchestration/eventStream';
 import { SERVICE_PORT } from './constants';
@@ -9,6 +10,15 @@ const fastify = Fastify({
   logger: true
 });
 
+// Configure CORS to allow all origins
+const corsOptions = {
+  origin: true, // Allow all origins
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+};
+
+fastify.register(cors, corsOptions);
 
 const publishEventSchema = {
   params: {
