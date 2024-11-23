@@ -18,4 +18,4 @@ ENV PORT=8080
 EXPOSE 8080
 
 # Start webhook server
-CMD ["node", "dist/webhookServer.js"]
+CMD ["npm", "run", "startWebhookServer"]

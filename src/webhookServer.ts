@@ -3,7 +3,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 
 import { publishEvent } from './utils/orchestration/eventStream';
-import { SERVICE_PORT } from './constants';
+import { SERVICE_HOST, SERVICE_PORT } from './constants';
 import 'dotenv/config';
 
 const fastify = Fastify({
@@ -53,7 +53,10 @@ fastify.post<{
 
 const start = async () => {
   try {
-    await fastify.listen({ port: Number(SERVICE_PORT) });
+    await fastify.listen({
+      port: Number(SERVICE_PORT),
+      host: SERVICE_HOST
+    });
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
