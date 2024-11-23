@@ -4,9 +4,9 @@ export const getStreamKey = (runId: string) => {
   return `run:${runId}:events`
 }
 
-export const publishEvent = async (runId: string, event: Record<string, unknown>) => {
+export const publishEvent = async (runId: string, event: string) => {
   const streamKey = `run:${runId}:events`;
-  await redis.xadd(streamKey, '*', 'event', JSON.stringify(event));
+  await redis.xadd(streamKey, '*', 'event', event);
 };
 
 export type CancelSubscription = () => void
@@ -36,8 +36,12 @@ export const subscribeToEvents: SubscribeToEvents = ({ runId, callback }) => {
     }
 
     messages.forEach(([id, fields]) => {
-      callback(JSON.parse(fields[0]));
-    });
+      try {
+        callback(JSON.parse(fields[0]));
+      } catch (error) {
+        console.error("Error parsing event", error)
+      }
+    })
 
     listenForEvents(messages[messages.length - 1]?.[0]);
   };

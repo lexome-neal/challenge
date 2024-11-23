@@ -2,26 +2,14 @@ import { GraphNode, NodeAgent } from "./types"
 
 export class AgentGraph {
   entry?: GraphNode
-  initialized: boolean
-
-  initialize(params: {
-    entry: GraphNode,
-  }) {
-    this.entry = params.entry
-    this.initialized = true
-  }
 
   generateScriptFromNodePath(params: {
     nodePath: string[],
   }) {
     const { nodePath } = params
 
-    if (!this.initialized) {
-      throw new Error("Graph not initialized")
-    }
-
-    let currentNode = this.entry
-    let script = ""
+    let currentNode = this.entry as GraphNode
+    let script = currentNode.script
     let wasLastNodeClarification = false
 
     for (const nodeId of nodePath) {
@@ -55,22 +43,20 @@ export class AgentGraph {
   }) {
     const { nodePath } = params
 
-    let node = this.entry?.responses.find((node) => node.id === nodePath[0])
-
-    if (!node) {
-      throw new Error(`Node with id ${nodePath[0]} not found`)
+    if (!this.entry || nodePath[0] !== this.entry.id) {
+      throw new Error("Invalid node path")
     }
 
+    let node = this.entry as GraphNode
+
     for (const nodeId of nodePath.slice(1)) {
-      node = node?.responses.find((node) => node.id === nodeId)
+      node = node?.responses.find((node) => node.id === nodeId) as GraphNode
 
       if (!node) {
         throw new Error(`Node with id ${nodeId} not found`)
       }
     }
 
-    return node
+    return node as GraphNode
   }
-
-
 }

@@ -4,39 +4,49 @@ import { CallTracker, CallTrackerInterface } from "../utils/orchestration/CallTr
 import { NodePathQueue, NodePathQueueInterface } from "../utils/orchestration/NodePathQueue"
 import { generateAnalystResponses } from "../prompts/generateAnalystResponses"
 import { AgentGraph } from "./index"
-import { NodeAgent } from "./types"
+import { GraphNode, NodeAgent } from "./types"
 import { executeCall } from "../utils/orchestration/executeCall"
 import { generateTranscript } from "../utils/ai/generateTranscript"
 import { analyzeTranscript } from "../prompts/analyzeTranscript"
 import { CancelSubscription, deleteStream, subscribeToEvents } from "../utils/orchestration/eventStream"
-import { getMediaUrl } from "../constants"
+import { getMediaUrl, INITIAL_NODE_PATH } from "../constants"
+import ThreadManager from "../utils/orchestration/ThreadManager"
+import analystInitialInstructions from "../prompts/analystInitialInstructions"
+import { generateInitialAnalystResponses } from "../prompts/generateInitialAnalystResponses"
+
+const isInitialNodePath = (nodePath: string[] | null) => nodePath && nodePath.length === 1 && nodePath[0] === INITIAL_NODE_PATH[0]
 
 export class AgentGraphBuilder {
   graph: AgentGraph
   callTracker: CallTrackerInterface
   nodePathQueue: NodePathQueueInterface
-  concurrentCalls: number
-  activeCalls: number
-  executedCalls: number
-  maxCalls: number
+  threadManager: ThreadManager
   runId: string
-  cancelEventStream: CancelSubscription
+  cancelEventStream: CancelSubscription | undefined
+  phoneNumber: string = ''
 
   constructor(params: {
-    callTracker: CallTrackerInterface,
-    nodePathQueue: NodePathQueueInterface,
     concurrentCalls: number,
     maxCalls: number,
+    phoneNumber: string,
   }) {
     this.runId = uuidv4()
     this.graph = new AgentGraph()
+    this.phoneNumber = params.phoneNumber
 
-    this.callTracker = params.callTracker || new CallTracker()
-    this.nodePathQueue = params.nodePathQueue || new NodePathQueue()
-    this.concurrentCalls = params.concurrentCalls || 1
-    this.activeCalls = 0
-    this.executedCalls = 0
-    this.maxCalls = params.maxCalls || 20
+    this.callTracker = new CallTracker()
+    this.nodePathQueue = new NodePathQueue()
+    this.threadManager = new ThreadManager({
+      maxThreads: params.concurrentCalls || 1,
+      maxExecutedThreads: params.maxCalls || 20,
+      startThread: () => this.startCallThread(),
+    })
+  }
+
+  async build() {
+    this.nodePathQueue.add({ nodePath: INITIAL_NODE_PATH })
+    this.subscribeToCallCompletions()
+    this.threadManager.spinUpThreads()
   }
 
   checkIfGraphIsComplete() {
@@ -47,14 +57,15 @@ export class AgentGraphBuilder {
     const nodePath = this.nodePathQueue.next()
 
     if (nodePath) {
-      this.activeCalls++
-      this.executedCalls++
+      const isInitial = isInitialNodePath(nodePath)
 
-      const script = this.graph.generateScriptFromNodePath({ nodePath: nodePath })
+      const script = isInitial
+        ? analystInitialInstructions
+        : this.graph.generateScriptFromNodePath({ nodePath })
 
       const { id } = await executeCall({
         script,
-        phoneNumber: nodePath[0],
+        phoneNumber: this.phoneNumber,
       })
 
       this.callTracker.addCall({
@@ -72,6 +83,16 @@ export class AgentGraphBuilder {
 
     const transcript = await generateTranscript({ audioUrl })
 
+    if (isInitialNodePath(nodePath)) {
+      // The analyst is calling the agent to see how it starts the call
+      // TO-DO verify that the transcript has only one message
+
+      return {
+        additionalMessage: transcript,
+        conversationSuccess: true,
+      }
+    }
+
     const script = this.graph.generateScriptFromNodePath({ nodePath })
 
     const analysis = await analyzeTranscript({ template: script, actual: transcript })
@@ -83,7 +104,9 @@ export class AgentGraphBuilder {
   }
 
   finishBuild() {
-    this.cancelEventStream()
+    if (this.cancelEventStream) {
+      this.cancelEventStream()
+    }
 
     deleteStream(this.runId)
   }
@@ -111,13 +134,10 @@ export class AgentGraphBuilder {
       console.error(error)
     }
 
-    this.activeCalls--
+    this.threadManager.markThreadResolved()
 
-    if (
-      !this.checkIfGraphIsComplete() &&
-      this.executedCalls < this.maxCalls
-    ) {
-      this.startCallThread()
+    if (!this.checkIfGraphIsComplete()) {
+      this.threadManager.startThread()
     }
   }
 
@@ -126,8 +146,6 @@ export class AgentGraphBuilder {
       runId: this.runId,
       callback: async (event) => {
         const { id, recording_available, status } = event
-
-        console.log(recording_available, status)
 
         if (recording_available) {
           this.resolveCallThread({
@@ -147,27 +165,44 @@ export class AgentGraphBuilder {
   }) {
     const { nodePath, response } = params
 
-    const node = this.graph.selectNode({ nodePath })
+    let node: GraphNode | undefined = undefined
+
+    const isInitial = isInitialNodePath(nodePath)
 
     const nextId = uuidv4()
 
-    node.responses.push({
-      script: response,
-      id: nextId,
-      isClarification: false,
-      agent: NodeAgent.agent,
-      responses: [],
-    })
+    if (isInitial) {
+      node = {
+        id: nextId,
+        agent: NodeAgent.agent,
+        script: response,
+        isClarification: false,
+        responses: [],
+      }
 
-    const nextNodePath = [...nodePath, nextId]
+    } else {
+      node = this.graph.selectNode({ nodePath })
+
+      node.responses.push({
+        script: response,
+        id: nextId,
+        isClarification: false,
+        agent: NodeAgent.agent,
+        responses: [],
+      })
+    }
+
+    const updatedNodePath = isInitial ? [nextId] : [...nodePath, nextId]
 
     const {
       responses,
       isResponseAClarification,
-    } = await generateAnalystResponses({ script: response })
+    } = isInitial
+      ? await generateInitialAnalystResponses({ transcript: response })
+      : await generateAnalystResponses({ script: response })
 
     this.addAnalystResponses({
-      nodePath: nextNodePath,
+      nodePath: updatedNodePath,
       responses,
       isClarification: isResponseAClarification,
     })

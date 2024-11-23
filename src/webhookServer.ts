@@ -9,12 +9,6 @@ const fastify = Fastify({
   logger: true
 });
 
-// Register JSON body parser
-fastify.register(require('@fastify/cors'));
-
-interface PublishEventBody {
-  event: Record<string, unknown>;
-}
 
 const publishEventSchema = {
   params: {
@@ -26,21 +20,19 @@ const publishEventSchema = {
   },
   body: {
     type: 'object',
-    required: ['event'],
-    properties: {
-      event: { type: 'object' }
-    }
   }
 };
 
-fastify.post<{ Params: { runId: string }, Body: PublishEventBody }>(
+fastify.post<{
+  Params: { runId: string },
+  Body: Record<string, unknown>
+}>(
   '/publish-event/:runId',
   { schema: publishEventSchema },
   async (request, reply) => {
     try {
       const { runId } = request.params;
-      const { event } = request.body;
-      await publishEvent(runId, event)
+      await publishEvent(runId, JSON.stringify(request.body))
       return { success: true };
     } catch (error) {
       request.log.error('Error publishing event:', error);

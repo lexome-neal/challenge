@@ -1,7 +1,7 @@
 import { executeCompletionPrompt } from "../utils/ai/executeCompletionPrompt";
 import { z } from "zod";
 
-const analystResponsesResponseSchema = z.object({
+export const analystResponsesResponseSchema = z.object({
   responses: z.array(z.string()),
   conversationEnded: z.boolean(),
   isResponseAClarification: z.boolean(),
